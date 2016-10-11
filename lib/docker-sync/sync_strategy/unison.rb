@@ -114,13 +114,17 @@ module Docker_Sync
         args.push(@options['src'])
         args.push('-auto')
         args.push('-batch')
-        args.push(@options['sync_args']) if @options.key?('sync_args')
-        sync_host_port = get_host_port(get_container_name, UNISON_CONTAINER_PORT)
-        args.push("socket://#{@options['sync_host_ip']}:#{sync_host_port}")
 
-        if @options.key?('sync_group') || @options.key?('sync_groupid')
-          raise('Unison does not support sync_user, sync_group, sync_groupid - please use rsync if you need that')
+        sync_host_port = get_host_port(get_container_name, UNISON_CONTAINER_PORT)
+        dest = "socket://#{@options['sync_host_ip']}:#{sync_host_port}"
+
+        unless @options['sync_args'].nil?
+          args += @options['sync_args'].map do |sync_arg|
+            sync_arg.gsub(/\bSRC\b/, @options['src']).gsub(/\bDEST\b/, dest)
+          end
         end
+
+        args.push(dest)
         return args
       end
 
@@ -132,11 +136,17 @@ module Docker_Sync
 
         env['UNISON_EXCLUDES'] = @options['sync_excludes'].map { |pattern| "-ignore='Path #{pattern}'" }.join(' ') if @options.key?('sync_excludes')
         env['UNISON_OWNER'] = @options['sync_user'] if @options.key?('sync_user')
+        env['UNISON_GROUP'] = @options['sync_group'] if @options.key?('sync_group')
         env['MAX_INOTIFY_WATCHES'] = @options['max_inotify_watches'] if @options.key?('max_inotify_watches')
         if @options['sync_userid'] == 'from_host'
           env['UNISON_OWNER_UID'] = Process.uid
         else
           env['UNISON_OWNER_UID'] = @options['sync_userid'] if @options.key?('sync_userid')
+        end
+        if @options['sync_groupid'] == 'from_host'
+          env['UNISON_OWNER_GID'] = Process.gid
+        else
+          env['UNISON_OWNER_GID'] = @options['sync_groupid'] if @options.key?('sync_groupid')
         end
 
         additional_docker_env = env.map{ |key,value| "-e #{key}=\"#{value}\"" }.join(' ')
